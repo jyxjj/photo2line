@@ -1,0 +1,10 @@
+# photo2line 依赖（服务端 Web 框架为零依赖，仅标准库）
+numpy>=1.24
+opencv-python>=4.8
+scipy>=1.10
+scikit-image>=0.21
+pillow>=10.0
+# 用于把 SVG 光栅化成 PNG；不装时自动回落到 Edge/Chrome headless 或 OpenCV
+PyMuPDF>=1.23
+# 可选：启用 AI 边缘模型通道（把 .onnx 放进 models/ 目录）
+# onnxruntime>=1.16

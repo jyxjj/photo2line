@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>零件图 → 线条图 · 实物照片转 2D 矢量线条</title>
+<style>
+/* ==========================================================================
+   设计令牌
+   ========================================================================== */
+:root {
+  --bg: #080d16;
+  --bg-grad-1: rgba(79, 209, 197, .07);
+  --bg-grad-2: rgba(109, 139, 255, .09);
+  --panel: #111a29;
+  --panel-2: #162132;
+  --panel-3: #1b273c;
+  --line: #26364f;
+  --line-soft: #1d2b42;
+  --txt: #e9f0fc;
+  --muted: #93a3c0;
+  --faint: #66799a;
+  --accent: #4fd1c5;
+  --accent-2: #7a9bff;
+  --accent-dim: rgba(79, 209, 197, .13);
+  --ok: #52d98a;
+  --warn: #f5bd69;
+  --err: #ff7285;
+  --r-lg: 18px;
+  --r-md: 13px;
+  --r-sm: 9px;
+  --shadow: 0 14px 38px rgba(0, 0, 0, .34);
+  --shadow-soft: 0 4px 14px rgba(0, 0, 0, .22);
+  --ease: cubic-bezier(.22, .68, .28, 1);
+  --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { margin: 0; padding: 0; min-height: 100%; }
+body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(900px 560px at 8% -10%, var(--bg-grad-2), transparent 70%),
+    radial-gradient(760px 520px at 100% 0%, var(--bg-grad-1), transparent 68%);
+  background-attachment: fixed;
+  color: var(--txt);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+::selection { background: rgba(79, 209, 197, .3); }
+
+.app { max-width: 1680px; margin: 0 auto; padding: 0 26px 56px; }
+
+/* ==========================================================================
+   顶部栏
+   ========================================================================== */
+.topbar {
+  display: flex; align-items: center; gap: 18px;
+  padding: 24px 2px 22px; margin-bottom: 22px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.brand {
+  width: 48px; height: 48px; flex: none; border-radius: 14px;
+  display: grid; place-items: center; color: #061a1c;
+  background: linear-gradient(140deg, var(--accent), #62a6ff);
+  box-shadow: 0 8px 24px rgba(79, 209, 197, .24), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.brand svg { width: 27px; height: 27px; }
+.title-block { min-width: 0; }
+h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: .4px; line-height: 1.3; }
+h1 .arrow { color: var(--accent); margin: 0 4px; font-weight: 500; }
+.subtitle { margin: 3px 0 0; color: var(--muted); font-size: 12.5px; }
+.topbar-right { margin-left: auto; flex: none; }
+
+.status {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 9px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: rgba(22, 33, 50, .78);
+  color: var(--txt); box-shadow: var(--shadow-soft);
+  transition: border-color .2s var(--ease), background .2s var(--ease), transform .2s var(--ease);
+}
+.status:hover { transform: translateY(-1px); border-color: #3a5074; }
+.status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
+.status[data-state="online"] .dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(82,217,138,.14); }
+.status[data-state="offline"] .dot { background: var(--err); box-shadow: 0 0 0 4px rgba(255,114,133,.14); }
+.status[data-state="checking"] .dot { background: var(--warn); animation: pulse 1.1s infinite; }
+@keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+.status-main { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.status-sub { font-size: 11px; color: var(--faint); white-space: nowrap; }
+.status-sub:empty { display: none; }
+
+/* ==========================================================================
+   布局
+   ========================================================================== */
+.layout {
+  display: grid; grid-template-columns: minmax(340px, 372px) minmax(0, 1fr);
+  gap: 20px; align-items: start;
+}
+.sidebar, .workspace { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.card {
+  background: linear-gradient(180deg, rgba(23,34,52,.75), rgba(17,26,41,.92));
+  border: 1px solid var(--line-soft); border-radius: var(--r-lg);
+  box-shadow: var(--shadow); padding: 18px;
+}
+.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.card-head h2 { margin: 0; font-size: 13.5px; font-weight: 650; letter-spacing: .4px; }
+.step {
+  flex: none; width: 24px; height: 24px; border-radius: 7px;
+  display: grid; place-items: center; font: 600 10.5px var(--mono);
+  color: var(--accent); background: var(--accent-dim);
+  border: 1px solid rgba(79,209,197,.22);
+}
+.head-extra { margin-left: auto; font-size: 11px; color: var(--faint); }
+.badge {
+  font-size: 10.5px; padding: 3px 9px; border-radius: 99px;
+  color: var(--muted); background: rgba(255,255,255,.04); border: 1px solid var(--line);
+}
+
+/* ==========================================================================
+   上传
+   ========================================================================== */
+.dropzone {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 7px; padding: 24px 16px; border-radius: var(--r-md); text-align: center;
+  border: 1.5px dashed #34496a; background: rgba(10,18,32,.5);
+  transition: border-color .22s var(--ease), background .22s var(--ease), transform .22s var(--ease);
+  cursor: pointer;
+}
+.dropzone:hover, .dropzone.is-drag {
+  border-color: var(--accent); background: rgba(79,209,197,.07); transform: translateY(-1px);
+}
+.dropzone.has-file { padding: 14px 16px; }
+.dropzone svg.upload-ico { width: 34px; height: 34px; color: var(--accent); margin-bottom: 2px; }
+.dz-title { margin: 0; font-size: 13px; font-weight: 600; }
+.dz-hint { margin: 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
+.dz-btn {
+  margin-top: 7px; padding: 6px 15px; border-radius: 99px; font-size: 11.5px;
+  color: #07171a; font-weight: 700;
+  background: linear-gradient(120deg, var(--accent), #77d7ff);
+}
+
+.file-card {
+  display: flex; align-items: center; gap: 12px; margin-top: 12px;
+  padding: 10px; border-radius: var(--r-md);
+  background: var(--panel-2); border: 1px solid var(--line);
+  animation: rise .28s var(--ease);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(7px); } }
+.file-card img {
+  width: 58px; height: 58px; flex: none; object-fit: cover; border-radius: 8px;
+  background: #0b1220; border: 1px solid var(--line);
+}
+.file-meta { min-width: 0; flex: 1; }
+.file-name {
+  font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.file-sub { font-size: 11px; color: var(--faint); margin-top: 2px; font-family: var(--mono); }
+.icon-btn {
+  flex: none; width: 28px; height: 28px; border-radius: 8px; line-height: 1;
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  font-size: 18px; transition: all .18s var(--ease);
+}
+.icon-btn:hover { color: var(--err); border-color: rgba(255,114,133,.5); background: rgba(255,114,133,.08); }
+
+/* ==========================================================================
+   预设卡片
+   ========================================================================== */
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.preset {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 11px 12px; border-radius: var(--r-md); text-align: left;
+  color: var(--muted); background: rgba(10,18,32,.5);
+  border: 1px solid var(--line); transition: all .2s var(--ease);
+}
+.preset:hover { border-color: #3c567d; color: var(--txt); transform: translateY(-1px); }
+.preset.is-active {
+  color: var(--txt); border-color: rgba(79,209,197,.55);
+  background: linear-gradient(140deg, rgba(79,209,197,.13), rgba(122,155,255,.08));
+  box-shadow: inset 0 0 0 1px rgba(79,209,197,.09), 0 6px 18px rgba(0,0,0,.2);
+}
+.preset-ico { color: var(--faint); margin-bottom: 3px; }
+.preset.is-active .preset-ico { color: var(--accent); }
+.preset-ico svg { width: 19px; height: 19px; display: block; }
+.preset-name { font-size: 12.5px; font-weight: 650; }
+.preset-desc { font-size: 10.5px; color: var(--faint); }
+.preset.is-active .preset-desc { color: #a8c3cd; }
+
+/* ==========================================================================
+   参数控件
+   ========================================================================== */
+.field { margin-bottom: 15px; }
+.field:last-child { margin-bottom: 0; }
+.field-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.field-top label { font-size: 12px; color: #c6d4ea; }
+.field-val {
+  min-width: 50px; text-align: right; font: 600 11.5px var(--mono);
+  color: var(--accent); background: var(--accent-dim);
+  padding: 2px 8px; border-radius: 6px;
+}
+.num-input {
+  width: 74px; padding: 3px 7px; text-align: right; border-radius: 6px;
+  font: 600 11.5px var(--mono); color: var(--accent);
+  background: rgba(8,15,26,.8); border: 1px solid var(--line);
+}
+.field-hint { margin: 3px 0 0; font-size: 10.5px; color: var(--faint); }
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 18px; margin: 0; background: transparent; cursor: pointer;
+  --fill: 50%;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px; border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent) 0 var(--fill), #30435f var(--fill) 100%);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 15px; height: 15px; margin-top: -5px;
+  border-radius: 50%; background: #f2fbff; border: 3px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,.45); transition: transform .15s var(--ease);
+}
+input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.16); }
+input[type="range"]::-moz-range-track { height: 5px; border-radius: 99px; background: #30435f; }
+input[type="range"]::-moz-range-progress { height: 5px; border-radius: 99px; background: var(--accent); }
+input[type="range"]::-moz-range-thumb {
+  width: 11px; height: 11px; border-radius: 50%; background: #f2fbff;
+  border: 3px solid var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.45);
+}
+
+.sep { height: 1px; background: var(--line-soft); margin: 16px 0; border: 0; }
+.color-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.color-row > label { font-size: 12px; color: #c6d4ea; }
+.color-ctl { display: flex; align-items: center; gap: 7px; }
+.color-ctl.is-off { opacity: .42; }
+input[type="color"] {
+  width: 34px; height: 30px; padding: 2px; border-radius: 8px;
+  background: var(--panel-3); border: 1px solid var(--line); cursor: pointer;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+.hex-input {
+  width: 88px; padding: 5px 8px; border-radius: 7px;
+  font: 500 11.5px var(--mono); text-transform: lowercase;
+  color: var(--txt); background: rgba(8,15,26,.8); border: 1px solid var(--line);
+}
+
+.switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--line-soft); cursor: pointer;
+}
+.switch-copy { min-width: 0; }
+.switch-name { display: block; font-size: 12px; color: #c6d4ea; }
+.switch-desc { display: block; font-size: 10.5px; color: var(--faint); }
+.switch { position: relative; width: 40px; height: 23px; flex: none; }
+.switch input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; opacity: 0; cursor: pointer; z-index: 2;
+}
+.switch .track {
+  position: absolute; inset: 0; border-radius: 99px;
+  background: #2a3a55; border: 1px solid var(--line);
+  transition: background .2s var(--ease);
+}
+.switch .track::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 15px; height: 15px; border-radius: 50%; background: #cbd8ee;
+  transition: transform .22s var(--ease), background .2s var(--ease);
+}
+.switch input:checked + .track { background: linear-gradient(120deg, #2fa89d, #527bdc); border-color: transparent; }
+.switch input:checked + .track::after { transform: translateX(17px); background: #fff; }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ==========================================================================
+   动作按钮
+   ========================================================================== */
+.actions { display: flex; flex-direction: column; gap: 9px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border-radius: 10px; padding: 10px 16px; font-size: 12.5px; font-weight: 650;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--txt);
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease),
+              border-color .18s var(--ease), background .18s var(--ease), opacity .18s;
+}
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn-primary {
+  border: none; color: #04171a; padding: 12px 16px; font-size: 13.5px;
+  background: linear-gradient(115deg, var(--accent) 0%, #63c4ea 55%, #7a9bff 100%);
+  box-shadow: 0 8px 22px rgba(79,209,197,.22);
+}
+.btn-primary:hover:not(:disabled) { box-shadow: 0 11px 28px rgba(79,209,197,.34); }
+.btn-primary:disabled { opacity: .4; box-shadow: none; filter: grayscale(.35); }
+.btn-ghost { background: transparent; color: var(--muted); }
+.btn-ghost:hover { color: var(--txt); border-color: #3c567d; }
+.btn-export { background: rgba(79,209,197,.09); border-color: rgba(79,209,197,.32); color: #c9f6f1; }
+.btn-export:hover:not(:disabled) { background: rgba(79,209,197,.17); }
+.btn-export:disabled { opacity: .36; }
+.btn svg { width: 15px; height: 15px; }
+.spinner {
+  display: none; width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(4,23,26,.28); border-top-color: #04171a;
+  animation: spin .7s linear infinite;
+}
+.btn.is-loading .spinner { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.progress { margin-top: 2px; }
+.progress-track { height: 4px; border-radius: 99px; background: #24344d; overflow: hidden; }
+.progress-track span {
+  display: block; height: 100%; width: 5%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width .45s var(--ease);
+}
+.progress p { margin: 6px 0 0; font-size: 10.5px; color: var(--muted); }
+.dirty-note {
+  display: flex; align-items: center; gap: 7px; margin: 0;
+  font-size: 11px; color: var(--warn);
+}
+.dirty-note::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--warn); box-shadow: 0 0 0 3px rgba(245,189,105,.14);
+}
+
+/* ==========================================================================
+   工作区
+   ========================================================================== */
+.ws-head {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 4px 2px 2px;
+}
+.ws-head h2 { margin: 0; font-size: 16px; font-weight: 680; letter-spacing: .3px; }
+.ws-head p { margin: 2px 0 0; font-size: 11.5px; color: var(--muted); }
+.seg {
+  margin-left: auto; display: inline-flex; padding: 3px; gap: 2px;
+  border-radius: 10px; background: rgba(10,18,32,.7); border: 1px solid var(--line);
+}
+.seg button {
+  padding: 6px 13px; border: 0; border-radius: 7px; font-size: 11.5px;
+  background: transparent; color: var(--muted); transition: all .18s var(--ease);
+}
+.seg button.is-active { background: var(--panel-3); color: var(--txt); box-shadow: var(--shadow-soft); }
+.seg button:hover:not(.is-active) { color: var(--txt); }
+
+.stage {
+  position: relative; min-height: 420px; padding: 14px;
+  border-radius: var(--r-lg); border: 1px solid var(--line-soft);
+  background: linear-gradient(160deg, #0e1727, #0a111e);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.empty, .preview-only {
+  min-height: 390px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; text-align: center;
+}
+.empty svg { width: 122px; height: 100px; opacity: .85; margin-bottom: 6px; }
+.empty h3, .preview-only h3 { margin: 0; font-size: 15px; font-weight: 650; }
+.empty p, .preview-only p { margin: 0; font-size: 12px; color: var(--muted); max-width: 440px; }
+.empty-steps { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+.empty-steps span {
+  font-size: 11px; color: var(--faint); padding: 5px 11px; border-radius: 99px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.02);
+}
+.preview-only img {
+  max-width: min(100%, 640px); max-height: 300px; object-fit: contain;
+  border-radius: 10px; margin-bottom: 12px; border: 1px solid var(--line);
+}
+
+/* 棋盘格：用于观察透明背景 */
+.checker {
+  background-color: #e9edf4;
+  background-image:
+    linear-gradient(45deg, #d3dae6 25%, transparent 25%),
+    linear-gradient(-45deg, #d3dae6 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d3dae6 75%),
+    linear-gradient(-45deg, transparent 75%, #d3dae6 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+.canvas {
+  --split: 50%;
+  position: relative; width: 100%; height: min(56vh, 540px); min-height: 340px;
+  border-radius: 12px; overflow: hidden; touch-action: none; cursor: ew-resize;
+  border: 1px solid rgba(255,255,255,.08);
+}
+.canvas .layer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; pointer-events: none; user-select: none;
+  -webkit-user-drag: none;
+}
+.canvas .layer.line { clip-path: inset(0 0 0 var(--split)); }
+.divider {
+  position: absolute; top: 0; bottom: 0; left: var(--split); width: 2px;
+  background: linear-gradient(180deg, var(--accent), #8fb4ff);
+  box-shadow: 0 0 12px rgba(0,0,0,.55); transform: translateX(-1px);
+  cursor: ew-resize;
+}
+.divider-handle {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; color: #06181c;
+  background: linear-gradient(140deg, #e6fffb, #9fd8ff);
+  box-shadow: 0 4px 16px rgba(0,0,0,.42); font: 700 13px var(--mono);
+  letter-spacing: -1px; transition: transform .18s var(--ease);
+}
+.divider:hover .divider-handle, .divider:focus-visible .divider-handle { transform: translate(-50%, -50%) scale(1.12); }
+.tag {
+  position: absolute; top: 10px; padding: 4px 10px; border-radius: 99px;
+  font-size: 10.5px; font-weight: 650; letter-spacing: .5px;
+  color: #f2f7ff; background: rgba(8,15,26,.72);
+  border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+.tag-left { left: 10px; }
+.tag-right { right: 10px; }
+.split-hint { margin: 10px 0 0; text-align: center; font-size: 10.5px; color: var(--faint); }
+
+.view-side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pane { margin: 0; min-width: 0; }
+.pane figcaption {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 11.5px; color: var(--muted); padding: 2px 2px 8px;
+}
+.pane figcaption span { font-family: var(--mono); color: var(--faint); font-size: 10.5px; }
+.pane-body {
+  height: min(48vh, 470px); min-height: 280px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.08); overflow: hidden;
+}
+.pane-body img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+/* ==========================================================================
+   结果信息 & 导出
+   ========================================================================== */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 9px;
+}
+.stats-empty { margin: 0; font-size: 11.5px; color: var(--faint); grid-column: 1 / -1; }
+.stat {
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(8,15,26,.52); border: 1px solid var(--line-soft);
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  animation: rise .3s var(--ease);
+}
+.stat-label { font-size: 10.5px; color: var(--faint); }
+.stat-value {
+  font: 600 13px var(--mono); color: var(--txt);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stat-value.is-accent { color: var(--accent); }
+.stat-hint { font-size: 10px; color: var(--faint); }
+
+.export-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap; padding: 16px 18px;
+  border-radius: var(--r-lg); border: 1px solid var(--line-soft);
+  background: linear-gradient(120deg, rgba(79,209,197,.06), rgba(122,155,255,.05)), var(--panel);
+  box-shadow: var(--shadow);
+}
+.export-copy strong { display: block; font-size: 13px; }
+.export-copy span { display: block; font-size: 11px; color: var(--faint); margin-top: 2px; }
+.export-btns { display: flex; gap: 9px; flex-wrap: wrap; }
+
+/* ==========================================================================
+   Toast
+   ========================================================================== */
+.toasts {
+  position: fixed; z-index: 99; top: 18px; right: 18px;
+  display: flex; flex-direction: column; gap: 9px; max-width: min(380px, calc(100vw - 36px));
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px; border-radius: 11px; font-size: 12px; line-height: 1.5;
+  color: var(--txt); background: #1b273c; border: 1px solid var(--line);
+  box-shadow: 0 12px 30px rgba(0,0,0,.45);
+  animation: toast-in .26s var(--ease);
+  word-break: break-word;
+}
+.toast.is-out { animation: toast-out .24s var(--ease) forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(20px); } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(20px); } }
+.toast-ico { flex: none; width: 17px; height: 17px; margin-top: 1px; }
+.toast-error { border-color: rgba(255,114,133,.45); background: #2a1d2a; }
+.toast-error .toast-ico { color: var(--err); }
+.toast-success .toast-ico { color: var(--ok); }
+.toast-info .toast-ico { color: var(--accent); }
+
+.footer-note { margin-top: 22px; text-align: center; font-size: 10.5px; color: #4e5f7c; }
+
+/* ==========================================================================
+   响应式
+   ========================================================================== */
+@media (max-width: 1120px) {
+  .layout { grid-template-columns: 1fr; }
+  .canvas { height: min(60vh, 520px); }
+}
+@media (max-width: 700px) {
+  .app { padding: 0 14px 40px; }
+  .topbar { flex-wrap: wrap; gap: 12px; padding: 16px 0 16px; }
+  .topbar-right { margin-left: 0; width: 100%; }
+  .status { width: 100%; }
+  .status-sub { overflow: hidden; text-overflow: ellipsis; }
+  .view-side { grid-template-columns: 1fr; }
+  .pane-body { height: 300px; min-height: 0; }
+  .stage { padding: 10px; min-height: 300px; }
+  .canvas { height: 340px; min-height: 0; }
+  .empty, .preview-only { min-height: 300px; }
+  .seg { margin-left: 0; }
+  .export-row { flex-direction: column; align-items: stretch; }
+  .export-btns .btn { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= 顶部栏 ================= -->
+  <header class="topbar">
+    <div class="brand" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7z"/>
+        <path d="M3.5 7 12 11.5 20.5 7M12 11.5v10"/>
+        <path d="M7.5 4.7 16 9.2"/>
+      </svg>
+    </div>
+    <div class="title-block">
+      <h1>零件图 <span class="arrow">→</span> 线条图</h1>
+      <p class="subtitle">上传零部件实物照片，自动提取结构轮廓，导出可编辑的 2D SVG 与高清 PNG</p>
+    </div>
+    <div class="topbar-right">
+      <button id="healthBtn" class="status" type="button" data-state="checking"
+              aria-label="后端连接状态，点击重新检测" title="点击重新检测后端">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="status-main" id="healthText">正在检测后端…</span>
+        <span class="status-sub" id="healthDetail"></span>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ================= 左侧控制面板 ================= -->
+    <aside class="sidebar" aria-label="控制面板">
+
+      <!-- 上传 -->
+      <section class="card">
+        <div class="card-head"><span class="step">01</span><h2>上传实物图</h2></div>
+        <div id="dropzone" class="dropzone" role="button" tabindex="0"
+             aria-label="点击选择图片，或把图片拖拽到此处">
+          <svg class="upload-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2.5" y="3.5" width="19" height="17" rx="2.5"/>
+            <circle cx="8.5" cy="9" r="1.7"/>
+            <path d="m3 17 5-4 3.5 3 3-2.5L21 18"/>
+            <path d="M12 2v6m-2.4-2.4L12 3.2l2.4 2.4" opacity=".65"/>
+          </svg>
+          <p class="dz-title">点击选择图片，或拖拽到此处</p>
+          <p class="dz-hint">支持 JPG / PNG / WEBP / BMP / GIF<br>也可使用 Ctrl / ⌘ + V 粘贴截图</p>
+          <span class="dz-btn">选择图片</span>
+        </div>
+        <div id="fileCard" class="file-card" hidden>
+          <img id="fileThumb" alt="已选择图片的缩略预览">
+          <div class="file-meta">
+            <div class="file-name" id="fileName"></div>
+            <div class="file-sub" id="fileMeta"></div>
+          </div>
+          <button id="removeFile" class="icon-btn" type="button" title="移除图片" aria-label="移除已选图片">&times;</button>
+        </div>
+      </section>
+
+      <!-- 预设 -->
+      <section class="card">
+        <div class="card-head">
+          <span class="step">02</span><h2>方案预设</h2>
+          <span class="head-extra">切换即套用默认参数</span>
+        </div>
+        <div class="presets" id="presetGroup" role="group" aria-label="方案预设">
+          <button class="preset is-active" type="button" data-preset="auto" aria-pressed="true">
+            <span class="preset-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="7"/>
+              <path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg></span>
+            <span class="preset-name">自动</span><span class="preset-desc">均衡通用 · 推荐</span>
+          </button>
+          <button class="preset" type="button" data-preset="clean" aria-pressed="false">
+            <span class="preset-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>
+            <span class="preset-name">简洁</span><span class="preset-desc">去杂点 · 轮廓干净</span>
+          </button>
+          <button class="preset" type="button" data-preset="detailed" aria-pressed="false">
+            <span class="preset-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 19c4-9 8-11 18-13"/>
+              <circle cx="6" cy="6" r="1.4" fill="currentColor" stroke="none"/>
+              <circle cx="18" cy="17" r="1.4" fill="currentColor" stroke="none"/>
+              <path d="M3 21h18" opacity=".5"/></svg></span>
+            <span class="preset-name">精细</span><span class="preset-desc">保留纹理 · 放大描绘</span>
+          </button>
+          <button class="preset" type="button" data-preset="blueprint" aria-pressed="false">
+            <span class="preset-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="1.5"/>
+              <path d="M3 9h18M9 9v11M13 14h8M13 17h5"/></svg></span>
+            <span class="preset-name">工程图</span><span class="preset-desc">深底浅线 · 蓝图风</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 参数 -->
+      <section class="card">
+        <div class="card-head"><span class="step">03</span><h2>提取参数</h2></div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="denoise">降噪强度</label>
+            <output class="field-val" id="denoiseVal" for="denoise">1.5</output>
+          </div>
+          <input id="denoise" type="range" min="0" max="5" step="0.1" value="1.5"
+                 aria-describedby="denoiseHint">
+          <p class="field-hint" id="denoiseHint">值越大，越能抑制噪点、反光与表面纹理</p>
+        </div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="detail">细节灵敏度</label>
+            <output class="field-val" id="detailVal" for="detail">50</output>
+          </div>
+          <input id="detail" type="range" min="0" max="100" step="1" value="50"
+                 aria-describedby="detailHint">
+          <p class="field-hint" id="detailHint">值越高，提取的细小结构与浅刻线越多</p>
+        </div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="min_area">最小区域 (px²)</label>
+            <input id="minAreaNum" class="num-input" type="number" min="0" max="100000"
+                   step="1" value="24" aria-label="最小区域数值输入">
+          </div>
+          <input id="min_area" type="range" min="0" max="200" step="1" value="24"
+                 aria-describedby="minAreaHint">
+          <p class="field-hint" id="minAreaHint">过滤过小的连通域；数字框可输入更大数值</p>
+        </div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="simplify">轮廓简化 (px)</label>
+            <output class="field-val" id="simplifyVal" for="simplify">0.8</output>
+          </div>
+          <input id="simplify" type="range" min="0" max="5" step="0.1" value="0.8"
+                 aria-describedby="simplifyHint">
+          <p class="field-hint" id="simplifyHint">值越大，节点越少、路径越平滑、文件越小</p>
+        </div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="lineWidth">线宽 (px)</label>
+            <output class="field-val" id="lineWidthVal" for="lineWidth">1.2</output>
+          </div>
+          <input id="lineWidth" type="range" min="0.1" max="10" step="0.1" value="1.2"
+                 aria-describedby="lineWidthHint">
+          <p class="field-hint" id="lineWidthHint">控制输出线条粗细；值越大轮廓越粗</p>
+        </div>
+
+        <div class="field">
+          <div class="field-top">
+            <label for="upscale">放大倍率</label>
+            <output class="field-val" id="upscaleVal" for="upscale">1.0×</output>
+          </div>
+          <input id="upscale" type="range" min="1" max="3" step="0.1" value="1"
+                 aria-describedby="upscaleHint">
+          <p class="field-hint" id="upscaleHint">先放大原图再提取，有助于刻画微小特征</p>
+        </div>
+
+        <hr class="sep">
+
+        <div class="color-row">
+          <label for="stroke">线条颜色</label>
+          <div class="color-ctl">
+            <input id="stroke" type="color" value="#1a1a1a" aria-label="线条颜色选择器">
+            <input id="strokeHex" class="hex-input" type="text" value="#1a1a1a"
+                   spellcheck="false" maxlength="7" aria-label="线条颜色十六进制值">
+          </div>
+        </div>
+        <div class="color-row">
+          <label for="bg">背景颜色</label>
+          <div class="color-ctl" id="bgCtl">
+            <input id="bg" type="color" value="#ffffff" aria-label="背景颜色选择器">
+            <input id="bgHex" class="hex-input" type="text" value="#ffffff"
+                   spellcheck="false" maxlength="7" aria-label="背景颜色十六进制值">
+          </div>
+        </div>
+
+        <label class="switch-row" for="transparent">
+          <span class="switch-copy"><span class="switch-name">透明背景</span>
+            <span class="switch-desc">输出无底色的 SVG / PNG</span></span>
+          <span class="switch"><input id="transparent" type="checkbox"><span class="track"></span></span>
+        </label>
+        <label class="switch-row" for="invert">
+          <span class="switch-copy"><span class="switch-name">反色</span>
+            <span class="switch-desc">深底浅线，适合工程蓝图效果</span></span>
+          <span class="switch"><input id="invert" type="checkbox"><span class="track"></span></span>
+        </label>
+        <label class="switch-row" for="crop">
+          <span class="switch-copy"><span class="switch-name">自动裁边</span>
+            <span class="switch-desc">裁掉主体周围多余的空白</span></span>
+          <span class="switch"><input id="crop" type="checkbox" checked><span class="track"></span></span>
+        </label>
+      </section>
+
+      <!-- 动作 -->
+      <section class="card">
+        <div class="actions">
+          <button id="generateBtn" class="btn btn-primary" type="button" disabled>
+            <span class="spinner" aria-hidden="true"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 17c4-9 8-8 16-12M4 20h16"/>
+            </svg>
+            <span id="genLabel">生成线条图</span>
+          </button>
+          <div class="progress" id="progress" hidden>
+            <div class="progress-track"><span id="progressFill"></span></div>
+            <p id="progressText" aria-live="polite"></p>
+          </div>
+          <p id="dirtyNote" class="dirty-note" hidden>参数已修改，需重新生成</p>
+          <button id="resetBtn" class="btn btn-ghost" type="button">重置参数</button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ================= 右侧工作区 ================= -->
+    <section class="workspace" aria-label="结果预览与导出">
+      <div class="ws-head">
+        <div>
+          <h2>结果对比</h2>
+          <p id="wsSubtitle">上传照片并点击「生成线条图」开始</p>
+        </div>
+        <div class="seg" id="viewGroup" role="group" aria-label="预览模式">
+          <button type="button" data-view="split" class="is-active" aria-pressed="true">分割对比</button>
+          <button type="button" data-view="side" aria-pressed="false">双栏并排</button>
+        </div>
+      </div>
+
+      <div class="stage" id="stage">
+        <!-- 空状态 -->
+        <div class="empty" id="emptyState">
+          <svg viewBox="0 0 140 108" fill="none" aria-hidden="true">
+            <rect x="10" y="10" width="72" height="60" rx="6" fill="#1b2a42" stroke="#38527a" stroke-width="1.5"/>
+            <circle cx="30" cy="30" r="5" fill="#4fd1c5" opacity=".7"/>
+            <path d="m12 64 20-18 14 12 10-8 24 20" stroke="#6d8bff" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M96 34h30M96 48h20M96 62h26" stroke="#4fd1c5" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+            <rect x="92" y="18" width="40" height="62" rx="6" stroke="#38527a" stroke-width="1.5" stroke-dasharray="4 4"/>
+            <path d="M46 92h48" stroke="#38527a" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="m88 86 8 6-8 6" stroke="#4fd1c5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <h3>等待开始</h3>
+          <p>上传一张零部件实物照片，选择方案后点击「生成线条图」，这里会显示原图与矢量线条结果的对比。</p>
+          <div class="empty-steps"><span>① 上传照片</span><span>② 调整参数</span><span>③ 生成并导出</span></div>
+        </div>
+
+        <!-- 仅有原图 -->
+        <div class="preview-only checker" id="previewOnly" hidden>
+          <img id="previewOnlyImg" alt="待转换的原图预览">
+          <h3>已载入原图</h3>
+          <p>点击左侧「生成线条图」即可查看分割对比结果并导出文件。</p>
+        </div>
+
+        <!-- 对比视图 -->
+        <div class="compare" id="compare" hidden>
+          <div id="viewSplit">
+            <div class="canvas checker" id="splitCanvas">
+              <img id="origSplit" class="layer orig" alt="原图（对比视图左半部分）">
+              <img id="lineSplit" class="layer line" alt="生成的 2D 线条图（对比视图右半部分）">
+              <span class="tag tag-left">原图</span>
+              <span class="tag tag-right">线条图</span>
+              <div id="divider" class="divider" role="slider" tabindex="0"
+                   aria-label="对比分割位置" aria-orientation="horizontal"
+                   aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="原图占 50%">
+                <span class="divider-handle" aria-hidden="true">&lsaquo;&rsaquo;</span>
+              </div>
+            </div>
+            <p class="split-hint">拖动手柄调整对比位置；聚焦手柄后可用 ← / → 方向键微调，Home / End 跳到两端</p>
+          </div>
+          <div class="view-side" id="viewSide" hidden>
+            <figure class="pane">
+              <figcaption><span>原图</span><span id="origSize"></span></figcaption>
+              <div class="pane-body checker"><img id="origSide" alt="原图（并排视图）"></div>
+            </figure>
+            <figure class="pane">
+              <figcaption><span>线条图</span><span id="lineSize"></span></figcaption>
+              <div class="pane-body checker"><img id="lineSide" alt="生成的 2D 线条图（并排视图）"></div>
+            </figure>
+          </div>
+        </div>
+      </div>
+
+      <!-- 结果信息 -->
+      <section class="card" aria-labelledby="statsTitle">
+        <div class="card-head">
+          <span class="step">04</span><h2 id="statsTitle">结果信息</h2>
+          <span class="badge" id="statsBadge">暂无数据</span>
+        </div>
+        <div class="stats-grid" id="statsGrid">
+          <p class="stats-empty">生成后将显示耗时、路径数、节点数、输出尺寸等信息。</p>
+        </div>
+      </section>
+
+      <!-- 导出 -->
+      <div class="export-row">
+        <div class="export-copy">
+          <strong>导出文件</strong>
+          <span id="exportHint">生成成功后可下载 SVG 与 PNG</span>
+        </div>
+        <div class="export-btns">
+          <button id="downloadSvg" class="btn btn-export" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v12m-4-4 4 4 4-4M4 18v3h16v-3"/>
+            </svg>下载 SVG
+          </button>
+          <button id="downloadPng" class="btn btn-export" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v12m-4-4 4 4 4-4M4 18v3h16v-3"/>
+            </svg>下载 PNG
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <p class="footer-note">纯前端单页 · 无外部依赖 · 图片仅在本地浏览器与后端服务之间传输</p>
+</div>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+<input id="fileInput" type="file" hidden
+       accept="image/jpeg,image/png,image/webp,image/bmp,image/gif,.jpg,.jpeg,.png,.webp,.bmp,.gif"
+       aria-label="选择零部件实物图片">
+
+<script>
+/* ==========================================================================
+   零件图 → 线条图 · 前端逻辑（原生 JS，无依赖、无模块）
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  /* 通过后端同源提供服务；若直接以 file:// 打开，探测 8777~8797 上正在运行的后端。
+     server.py 的 --auto-port 在端口被占用时会自动顺延，这里同步扫描避免"后端在线却显示离线"。 */
+  var API_BASE = '';
+  if (location.protocol === 'file:') {
+    window.__P2L_PORT = 8777;   /* checkHealth 探测到可用端口后写回 */
+    window.__P2L_API = function () { return 'http://127.0.0.1:' + window.__P2L_PORT; };
+  }
+
+  var PRESETS = {
+    auto:      { label: '自动',   denoise: 1.5, detail: 50, min_area: 24, simplify: 0.8,
+                 line_width: 1.2, upscale: 1,   transparent: 0, invert: 0, crop: 1,
+                 stroke: '#1a1a1a', bg: '#ffffff' },
+    clean:     { label: '简洁',   denoise: 2.5, detail: 35, min_area: 48, simplify: 1.4,
+                 line_width: 1.4, upscale: 1,   transparent: 0, invert: 0, crop: 1,
+                 stroke: '#1a1a1a', bg: '#ffffff' },
+    detailed:  { label: '精细',   denoise: 0.8, detail: 75, min_area: 12, simplify: 0.4,
+                 line_width: 1.0, upscale: 1.5, transparent: 0, invert: 0, crop: 1,
+                 stroke: '#1a1a1a', bg: '#ffffff' },
+    blueprint: { label: '工程图', denoise: 1.5, detail: 55, min_area: 24, simplify: 0.8,
+                 line_width: 1.1, upscale: 1,   transparent: 0, invert: 1, crop: 1,
+                 stroke: '#dceaff', bg: '#0d2b4e' }
+  };
+
+  /* 滑块与控件的对应关系、显示格式 */
+  var RANGES = [
+    { id: 'denoise',   key: 'denoise',    digits: 1, suffix: '' },
+    { id: 'detail',    key: 'detail',     digits: 0, suffix: '' },
+    { id: 'min_area',  key: 'min_area',   digits: 0, suffix: '' },
+    { id: 'simplify',  key: 'simplify',   digits: 1, suffix: '' },
+    { id: 'lineWidth', key: 'line_width', digits: 1, suffix: '' },
+    { id: 'upscale',   key: 'upscale',    digits: 1, suffix: '×' }
+  ];
+
+  var state = {
+    file: null, srcUrl: '', dims: null,
+    result: null, preset: 'auto', dirty: false, generating: false,
+    view: 'split', split: 50, dragging: false,
+    progressTimer: null, hideTimer: null
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  /* ----------------------------------------------------------------------
+     小工具
+     ---------------------------------------------------------------------- */
+  function formatBytes(n) {
+    if (typeof n !== 'number' || !isFinite(n) || n < 0) return '—';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+
+  function formatInt(n) {
+    return (typeof n === 'number' && isFinite(n)) ? Math.round(n).toLocaleString('zh-CN') : '—';
+  }
+
+  function niceKey(k) {
+    var map = {
+      width: '宽度', height: '高度', paths: '路径数', vertices: '节点数',
+      ink_pixels: '墨迹像素', svg_bytes: 'SVG 体积', png_bytes: 'PNG 体积',
+      mode: '描边模式', background: '背景', renderer: 'PNG 渲染器',
+      source_size: '源图尺寸', crop: '裁边区域', ink_ratio: '线稿密度',
+      elapsed_ms: '后端耗时', centerline: '中心线', close_gap: '断笔桥接'
+    };
+    return map[k] || k.replace(/_/g, ' ');
+  }
+
+  function genericValue(v) {
+    if (v === null || v === undefined) return '—';
+    if (typeof v === 'boolean') return v ? '是' : '否';
+    if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString('zh-CN') : String(v);
+    if (Array.isArray(v)) return v.join(' × ');
+    if (typeof v === 'object') {
+      try { return JSON.stringify(v).slice(0, 60); } catch (e) { return '—'; }
+    }
+    return String(v).slice(0, 60);
+  }
+
+  function toast(message, kind) {
+    kind = kind || 'info';
+    var el = document.createElement('div');
+    el.className = 'toast toast-' + kind;
+    el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    var ico = document.createElement('span');
+    ico.className = 'toast-ico';
+    /* 仅静态图标字符串，无外部数据参与 */
+    ico.innerHTML = kind === 'error'
+      ? '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01" stroke-linecap="round"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var txt = document.createElement('span');
+    txt.textContent = message;
+    el.appendChild(ico);
+    el.appendChild(txt);
+    $('toasts').appendChild(el);
+    window.setTimeout(function () {
+      el.classList.add('is-out');
+      window.setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 260);
+    }, kind === 'error' ? 5200 : 3200);
+  }
+
+  /* SVG 文本 → UTF-8 安全的 data URI（分块避免大文件爆栈） */
+  function svgToDataUri(svg) {
+    var bytes = new TextEncoder().encode(svg);
+    var chunk = 0x8000, binary = '';
+    for (var i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return 'data:image/svg+xml;base64,' + btoa(binary);
+  }
+
+  /* 后端可能给完整 data URI，也可能只给 base64 */
+  function normalizePng(png) {
+    if (!png || typeof png !== 'string') return '';
+    if (/^data:image\//i.test(png)) return png;
+    if (/^[A-Za-z0-9+/=\s]+$/.test(png)) return 'data:image/png;base64,' + png.replace(/\s/g, '');
+    return '';
+  }
+
+  function dataUriToBlob(uri) {
+    var comma = uri.indexOf(',');
+    if (comma < 0) throw new Error('PNG 数据格式无效');
+    var head = uri.slice(0, comma);
+    var payload = uri.slice(comma + 1);
+    var mimeMatch = /^data:([^;]+)/.exec(head);
+    var mime = mimeMatch ? mimeMatch[1] : 'image/png';
+    var binary = /;base64/i.test(head) ? atob(payload) : decodeURIComponent(payload);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i) & 255;
+    return new Blob([bytes], { type: mime });
+  }
+
+  function baseName() {
+    if (!state.file) return 'part';
+    return state.file.name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_') || 'part';
+  }
+
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.parentNode.removeChild(a);
+    window.setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    toast('已开始下载 ' + filename, 'success');
+  }
+
+  /* ----------------------------------------------------------------------
+     参数读写
+     ---------------------------------------------------------------------- */
+  function updateRangeUI(el) {
+    var min = parseFloat(el.min), max = parseFloat(el.max), val = parseFloat(el.value);
+    var pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+    el.style.setProperty('--fill', pct.toFixed(2) + '%');
+    var out = document.querySelector('output[for="' + el.id + '"]');
+    if (out) {
+      var spec = null;
+      for (var i = 0; i < RANGES.length; i++) if (RANGES[i].id === el.id) spec = RANGES[i];
+      var num = Number(el.value).toFixed(spec ? spec.digits : 1);
+      out.textContent = num + (spec ? spec.suffix : '');
+    }
+  }
+
+  function setRangeValue(id, value) {
+    var el = $(id);
+    el.value = String(value);
+    updateRangeUI(el);
+  }
+
+  function setHex(colorId, hexId, value) {
+    $(colorId).value = value;
+    $(hexId).value = value;
+  }
+
+  function updateBgDisabled() {
+    var off = $('transparent').checked;
+    $('bgCtl').classList.toggle('is-off', off);
+    $('bg').disabled = off;
+    $('bgHex').disabled = off;
+  }
+
+  function applyPreset(name, markAsDirty) {
+    var p = PRESETS[name];
+    if (!p) return;
+    state.preset = name;
+    setRangeValue('denoise', p.denoise);
+    setRangeValue('detail', p.detail);
+    setRangeValue('min_area', Math.min(200, p.min_area));
+    setRangeValue('simplify', p.simplify);
+    setRangeValue('lineWidth', p.line_width);
+    setRangeValue('upscale', p.upscale);
+    $('minAreaNum').value = String(p.min_area);
+    setHex('stroke', 'strokeHex', p.stroke);
+    setHex('bg', 'bgHex', p.bg);
+    $('transparent').checked = !!p.transparent;
+    $('invert').checked = !!p.invert;
+    $('crop').checked = !!p.crop;
+    updateBgDisabled();
+    var buttons = document.querySelectorAll('.preset');
+    for (var i = 0; i < buttons.length; i++) {
+      var active = buttons[i].getAttribute('data-preset') === name;
+      buttons[i].classList.toggle('is-active', active);
+      buttons[i].setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+    if (markAsDirty) markDirty();
+  }
+
+  function collectParams() {
+    return {
+      preset: state.preset,
+      denoise: $('denoise').value,
+      detail: $('detail').value,
+      min_area: $('minAreaNum').value || $('min_area').value,
+      simplify: $('simplify').value,
+      line_width: $('lineWidth').value,
+      upscale: $('upscale').value,
+      stroke: $('stroke').value,
+      bg: $('transparent').checked ? 'transparent' : $('bg').value,
+      transparent: $('transparent').checked ? '1' : '0',
+      invert: $('invert').checked ? '1' : '0',
+      crop: $('crop').checked ? '1' : '0'
+    };
+  }
+
+  function markDirty() {
+    state.dirty = true;
+    refreshHints();
+  }
+
+  function refreshHints() {
+    var showDirty = state.dirty && !!state.result && !state.generating;
+    $('dirtyNote').hidden = !showDirty;
+    if (state.generating) {
+      $('wsSubtitle').textContent = '正在生成线条图，请稍候…';
+    } else if (showDirty) {
+      $('wsSubtitle').textContent = '参数已修改，点击「生成线条图」更新结果';
+    } else if (state.result) {
+      $('wsSubtitle').textContent = '生成完成 · 可拖动分割线对比，或导出文件';
+    } else {
+      $('wsSubtitle').textContent = '上传照片并点击「生成线条图」开始';
+    }
+  }
+
+  /* ----------------------------------------------------------------------
+     文件选择 / 拖拽 / 粘贴
+     ---------------------------------------------------------------------- */
+  function isImageFile(file) {
+    if (!file) return false;
+    return /^image\/(jpeg|png|webp|bmp|gif)$/i.test(file.type) ||
+           /\.(jpe?g|png|webp|bmp|gif)$/i.test(file.name);
+  }
+
+  function updateFileMeta() {
+    if (!state.file) return;
+    var dims = state.dims ? state.dims.join(' × ') + ' px' : '尺寸读取中…';
+    $('fileMeta').textContent = dims + ' · ' + formatBytes(state.file.size);
+    $('origSize').textContent = state.dims ? state.dims.join(' × ') + ' px' : '';
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    if (!isImageFile(file)) {
+      toast('仅支持 JPG / PNG / WEBP / BMP / GIF 图片', 'error');
+      return;
+    }
+    if (state.srcUrl) URL.revokeObjectURL(state.srcUrl);
+    state.file = file;
+    state.dims = null;
+    state.srcUrl = URL.createObjectURL(file);
+    clearResult();
+
+    $('fileCard').hidden = false;
+    $('dropzone').classList.add('has-file');
+    $('fileThumb').src = state.srcUrl;
+    $('fileName').textContent = file.name;
+    $('fileInput').value = '';
+    updateFileMeta();
+
+    var probe = new Image();
+    probe.onload = function () {
+      state.dims = [probe.naturalWidth, probe.naturalHeight];
+      updateFileMeta();
+    };
+    probe.onerror = function () { updateFileMeta(); };
+    probe.src = state.srcUrl;
+
+    $('generateBtn').disabled = false;
+    renderStage();
+    refreshHints();
+    toast('已载入 ' + file.name + '（' + formatBytes(file.size) + '）', 'success');
+    if (/\.gif$/i.test(file.name)) toast('GIF 通常只处理第一帧', 'info');
+  }
+
+  function removeFile() {
+    if (state.srcUrl) URL.revokeObjectURL(state.srcUrl);
+    state.file = null;
+    state.srcUrl = '';
+    state.dims = null;
+    clearResult();
+    $('fileCard').hidden = true;
+    $('dropzone').classList.remove('has-file');
+    $('fileInput').value = '';
+    $('generateBtn').disabled = true;
+    renderStage();
+    refreshHints();
+  }
+
+  function pickFromDataTransfer(dt) {
+    if (!dt) return;
+    var files = dt.files;
+    if (files && files.length) {
+      for (var i = 0; i < files.length; i++) {
+        if (isImageFile(files[i])) { handleFile(files[i]); return; }
+      }
+      toast('拖拽内容中没有受支持的图片', 'error');
+      return;
+    }
+    var items = dt.items;
+    if (items) {
+      for (var j = 0; j < items.length; j++) {
+        if (items[j].kind === 'file' && isImageFile(items[j].getAsFile())) {
+          handleFile(items[j].getAsFile());
+          return;
+        }
+      }
+    }
+  }
+
+  /* ----------------------------------------------------------------------
+     结果显示
+     ---------------------------------------------------------------------- */
+  function clearResult() {
+    state.result = null;
+    state.dirty = false;
+    ['lineSplit', 'lineSide'].forEach(function (id) { $(id).removeAttribute('src'); });
+    var grid = $('statsGrid');
+    grid.textContent = '';
+    var p = document.createElement('p');
+    p.className = 'stats-empty';
+    p.textContent = '生成后将显示耗时、路径数、节点数、输出尺寸等信息。';
+    grid.appendChild(p);
+    $('statsBadge').textContent = '暂无数据';
+    $('lineSize').textContent = '';
+    $('downloadSvg').disabled = true;
+    $('downloadPng').disabled = true;
+    $('exportHint').textContent = '生成成功后可下载 SVG 与 PNG';
+  }
+
+  function setLineImages(svgUri) {
+    $('lineSplit').src = svgUri;
+    $('lineSide').src = svgUri;
+  }
+
+  function renderStage() {
+    var hasFile = !!state.file;
+    var hasResult = !!state.result;
+    $('emptyState').hidden = hasFile;
+    $('previewOnly').hidden = !hasFile || hasResult;
+    $('compare').hidden = !hasResult;
+
+    if (hasFile) {
+      $('previewOnlyImg').src = state.srcUrl;
+      $('origSplit').src = state.srcUrl;
+      $('origSide').src = state.srcUrl;
+    }
+    $('viewSplit').hidden = state.view !== 'split';
+    $('viewSide').hidden = state.view !== 'side';
+    setSplit(state.split);
+  }
+
+  function renderStats(data) {
+    var s = data.stats || {};
+    var grid = $('statsGrid');
+    grid.textContent = '';
+    var items = [];
+    function add(label, value, hint, accent) {
+      items.push({ label: label, value: value, hint: hint || '', accent: !!accent });
+    }
+
+    var elapsed = (typeof data.elapsed === 'number') ? data.elapsed :
+                  (typeof s.elapsed_ms === 'number' ? s.elapsed_ms / 1000 : null);
+    add('生成耗时', elapsed === null ? '—' : elapsed.toFixed(2) + ' s', '服务端处理', true);
+    add('路径数', formatInt(s.paths), 'path 元素/子路径');
+    add('节点数', formatInt(s.vertices), '轮廓折线顶点');
+    add('输出尺寸', (s.width && s.height) ? s.width + ' × ' + s.height + ' px' : '—', '裁边后 SVG 画布');
+    add('原图尺寸', Array.isArray(s.source_size) ? s.source_size.join(' × ') + ' px' : '—', '放大倍率后');
+    add('SVG 体积', formatBytes(typeof s.svg_bytes === 'number' ? s.svg_bytes : new Blob([data.svg]).size));
+    add('PNG 体积', formatBytes(s.png_bytes));
+    add('线稿密度', typeof s.ink_ratio === 'number' ? (s.ink_ratio * 100).toFixed(2) + ' %' : '—');
+    add('描边模式', s.mode === 'centerline' ? '中心线描边' :
+                    (s.mode === 'filled-contour' ? '填充轮廓' : genericValue(s.mode)));
+    add('PNG 渲染器', genericValue(s.renderer));
+    add('背景', s.background === 'transparent' ? '透明' : genericValue(s.background));
+    add('墨迹像素', formatInt(s.ink_pixels));
+
+    /* 后端新增的字段也一并展示，避免信息丢失 */
+    var known = {
+      elapsed_ms: 1, width: 1, height: 1, paths: 1, vertices: 1, ink_pixels: 1,
+      svg_bytes: 1, png_bytes: 1, mode: 1, background: 1, renderer: 1,
+      source_size: 1, crop: 1, ink_ratio: 1
+    };
+    Object.keys(s).forEach(function (k) {
+      if (!known[k]) add(niceKey(k), genericValue(s[k]));
+    });
+
+    items.forEach(function (it) {
+      var box = document.createElement('div');
+      box.className = 'stat';
+      var label = document.createElement('span');
+      label.className = 'stat-label';
+      label.textContent = it.label;
+      var value = document.createElement('strong');
+      value.className = 'stat-value' + (it.accent ? ' is-accent' : '');
+      value.textContent = it.value;
+      box.appendChild(label);
+      box.appendChild(value);
+      if (it.hint) {
+        var hint = document.createElement('span');
+        hint.className = 'stat-hint';
+        hint.textContent = it.hint;
+        box.appendChild(hint);
+      }
+      grid.appendChild(box);
+    });
+
+    var presetName = (data.params && PRESETS[data.params.preset]) ?
+      PRESETS[data.params.preset].label : PRESETS[state.preset].label;
+    $('statsBadge').textContent = '已生成 · ' + presetName + '方案';
+    $('lineSize').textContent = (s.width && s.height) ? s.width + ' × ' + s.height + ' px' : '';
+    $('exportHint').textContent = '文件名：' + baseName() + '_line.svg / _line.png';
+  }
+
+  /* ----------------------------------------------------------------------
+     进度提示（fetch 无上传进度，用阶段文案模拟）
+     ---------------------------------------------------------------------- */
+  var STEPS = [
+    '正在上传图片…',
+    '正在降噪并提取结构边缘…',
+    '正在追踪轮廓并矢量化…',
+    '正在渲染高清 PNG…'
+  ];
+
+  function startProgress() {
+    stopProgress();
+    var i = 0, pct = 6;
+    $('progress').hidden = false;
+    $('progressFill').style.width = pct + '%';
+    $('progressText').textContent = STEPS[0];
+    state.progressTimer = window.setInterval(function () {
+      i = Math.min(STEPS.length - 1, i + 1);
+      pct = Math.min(92, pct + 21);
+      $('progressFill').style.width = pct + '%';
+      $('progressText').textContent = STEPS[i];
+    }, 1100);
+  }
+
+  function finishProgress() {
+    if (state.progressTimer) { clearInterval(state.progressTimer); state.progressTimer = null; }
+    $('progressFill').style.width = '100%';
+    $('progressText').textContent = '生成完成';
+    state.hideTimer = window.setTimeout(function () {
+      $('progress').hidden = true;
+      state.hideTimer = null;
+    }, 1100);
+  }
+
+  function stopProgress(hide) {
+    if (state.progressTimer) { clearInterval(state.progressTimer); state.progressTimer = null; }
+    if (state.hideTimer) { clearTimeout(state.hideTimer); state.hideTimer = null; }
+    if (hide) $('progress').hidden = true;
+  }
+
+  function setGenerating(on) {
+    state.generating = on;
+    $('generateBtn').classList.toggle('is-loading', on);
+    $('generateBtn').disabled = on || !state.file;
+    $('generateBtn').setAttribute('aria-busy', on ? 'true' : 'false');
+    $('genLabel').textContent = on ? '正在生成…' : '生成线条图';
+    refreshHints();
+  }
+
+  /* ----------------------------------------------------------------------
+     主流程：调用 /api/convert
+     ---------------------------------------------------------------------- */
+  function generate() {
+    if (!state.file || state.generating) return;
+    /* 不在开始时清除 dirty：若本次生成失败，仍应提示用户参数尚未生效 */
+    setGenerating(true);
+    startProgress();
+
+    var form = new FormData();
+    form.append('image', state.file, state.file.name);
+    var params = collectParams();
+    Object.keys(params).forEach(function (k) { form.append(k, String(params[k])); });
+
+    var base = API_BASE || (window.__P2L_API ? window.__P2L_API() : '');
+    fetch(base + '/api/convert', { method: 'POST', body: form })
+      .then(function (res) {
+        return res.json().catch(function () {
+          throw new Error('后端返回了非 JSON 内容（HTTP ' + res.status + '）');
+        }).then(function (data) { return { status: res.status, data: data }; });
+      })
+      .then(function (r) {
+        var data = r.data;
+        if (r.status < 200 || r.status >= 300) {
+          throw new Error((data && data.error) || ('请求失败（HTTP ' + r.status + '）'));
+        }
+        if (!data || data.ok !== true) {
+          throw new Error((data && data.error) || '转换未成功，后端未返回 ok:true');
+        }
+        if (typeof data.svg !== 'string' || !data.svg) {
+          throw new Error('响应缺少 SVG 内容');
+        }
+        state.result = data;
+        state.dirty = false;             /* 成功后才确认这批参数已生效 */
+        setLineImages(svgToDataUri(data.svg)); /* 用 img + data URI 展示，绝不注入 HTML */
+        renderStats(data);
+        renderStage();
+        $('downloadSvg').disabled = false;
+        $('downloadPng').disabled = !normalizePng(data.png);
+        if (!normalizePng(data.png)) toast('后端未返回 PNG，仅可下载 SVG', 'info');
+        finishProgress();
+        refreshHints();
+        toast('生成完成 · ' + formatInt(data.stats && data.stats.paths) + ' 条路径', 'success');
+      })
+      .catch(function (err) {
+        stopProgress(true);
+        toast('生成失败：' + (err && err.message ? err.message : String(err)), 'error');
+      })
+      .then(function () {
+        setGenerating(false);
+      });
+  }
+
+  /* ----------------------------------------------------------------------
+     下载
+     ---------------------------------------------------------------------- */
+  function downloadSvg() {
+    if (!state.result) return;
+    try {
+      var blob = new Blob([state.result.svg], { type: 'image/svg+xml;charset=utf-8' });
+      downloadBlob(blob, baseName() + '_line.svg');
+    } catch (e) { toast('SVG 下载失败：' + e.message, 'error'); }
+  }
+
+  function downloadPng() {
+    if (!state.result) return;
+    var uri = normalizePng(state.result.png);
+    if (!uri) { toast('本次结果没有可用的 PNG 数据', 'error'); return; }
+    try {
+      downloadBlob(dataUriToBlob(uri), baseName() + '_line.png');
+    } catch (e) { toast('PNG 下载失败：' + e.message, 'error'); }
+  }
+
+  /* ----------------------------------------------------------------------
+     分割对比控件
+     ---------------------------------------------------------------------- */
+  function setSplit(pct) {
+    var v = Math.max(0, Math.min(100, Number(pct) || 0));
+    state.split = v;
+    $('splitCanvas').style.setProperty('--split', v.toFixed(2) + '%');
+    $('divider').setAttribute('aria-valuenow', String(Math.round(v)));
+    $('divider').setAttribute('aria-valuetext', '原图占 ' + Math.round(v) + '%');
+  }
+
+  function splitFromClientX(x) {
+    var rect = $('splitCanvas').getBoundingClientRect();
+    if (!rect.width) return;
+    setSplit(((x - rect.left) / rect.width) * 100);
+  }
+
+  /* ----------------------------------------------------------------------
+     后端健康检查
+     ---------------------------------------------------------------------- */
+  function setHealth(status, text, detail) {
+    $('healthBtn').setAttribute('data-state', status);
+    $('healthText').textContent = text;
+    $('healthDetail').textContent = detail || '';
+  }
+
+  function probePort(port) {
+    var ctrl = new AbortController();
+    var timer = window.setTimeout(function () { ctrl.abort(); }, 1200);
+    return fetch('http://127.0.0.1:' + port + '/api/health',
+                 { cache: 'no-store', signal: ctrl.signal })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data || data.ok !== true) throw new Error(data && data.error || '状态异常');
+        return data;
+      })
+      .finally(function () { clearTimeout(timer); });
+  }
+
+  function checkHealth() {
+    setHealth('checking', '正在检测后端…', '');
+    if (location.protocol !== 'file:') {
+      probeSameOrigin();
+      return;
+    }
+    /* file:// 打开时依次探测 8777~8797（与 --auto-port 顺延范围一致） */
+    var ports = [];
+    for (var p = 8777; p <= 8797; p++) ports.push(p);
+    ports.reduce(function (chain, port) {
+      return chain.then(function (found) {
+        if (found) return true;
+        return probePort(port).then(function (data) {
+          window.__P2L_PORT = port;
+          var extra = data.version ? ' · v' + data.version : '';
+          setHealth('online', '后端在线', '端口 ' + port + ' · 健康检查通过' + extra);
+          return true;
+        }).catch(function () { return false; });
+      });
+    }, Promise.resolve(false)).then(function (found) {
+      if (!found) setHealth('offline', '后端离线', '请先运行「启动线条图工具.bat」');
+    });
+  }
+
+  function probeSameOrigin() {
+    var ctrl = new AbortController();
+    var timer = window.setTimeout(function () { ctrl.abort(); }, 6000);
+    fetch(API_BASE + '/api/health', { cache: 'no-store', signal: ctrl.signal })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        if (data && data.ok === false) throw new Error(data.error || '状态异常');
+        var extra = data && data.version ? ' · v' + data.version : '';
+        setHealth('online', '后端在线', '健康检查通过' + extra);
+      })
+      .catch(function (err) {
+        var reason = err && err.name === 'AbortError' ? '请求超时' :
+                     (err && err.message ? err.message : '无法连接');
+        setHealth('offline', '后端离线', '点击重试 · ' + reason);
+      })
+      .then(function () { clearTimeout(timer); });
+  }
+
+  /* ----------------------------------------------------------------------
+     事件绑定
+     ---------------------------------------------------------------------- */
+  function bindEvents() {
+    /* 上传 */
+    $('dropzone').addEventListener('click', function () { $('fileInput').click(); });
+    $('dropzone').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); }
+    });
+    $('fileInput').addEventListener('change', function (e) {
+      if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+    });
+    $('removeFile').addEventListener('click', removeFile);
+
+    /* 拖放：只由 window 上的 drop 处理器负责取文件，避免事件冒泡导致重复处理 */
+    ['dragenter', 'dragover'].forEach(function (type) {
+      $('dropzone').addEventListener(type, function (e) {
+        e.preventDefault();
+        $('dropzone').classList.add('is-drag');
+      });
+    });
+    $('dropzone').addEventListener('dragleave', function (e) {
+      e.preventDefault();
+      $('dropzone').classList.remove('is-drag');
+    });
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('drop', function (e) {
+      e.preventDefault();
+      $('dropzone').classList.remove('is-drag');
+      pickFromDataTransfer(e.dataTransfer);
+    });
+    window.addEventListener('paste', function (e) {
+      var tag = e.target && e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return; /* 不干扰文本粘贴 */
+      pickFromDataTransfer(e.clipboardData);
+    });
+    window.addEventListener('pagehide', function () {
+      if (state.srcUrl) URL.revokeObjectURL(state.srcUrl);
+    });
+
+    /* 预设 */
+    document.querySelectorAll('.preset').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var name = btn.getAttribute('data-preset');
+        applyPreset(name, true);
+        toast('已套用「' + PRESETS[name].label + '」方案参数', 'info');
+      });
+    });
+
+    /* 滑块 */
+    RANGES.forEach(function (spec) {
+      var el = $(spec.id);
+      el.addEventListener('input', function () {
+        updateRangeUI(el);
+        if (spec.id === 'min_area') $('minAreaNum').value = el.value;
+        markDirty();
+      });
+      updateRangeUI(el);
+    });
+    $('minAreaNum').addEventListener('input', function () {
+      var raw = parseFloat($('minAreaNum').value);
+      if (isFinite(raw)) {
+        var clamped = Math.max(0, Math.min(100000, Math.round(raw)));
+        $('min_area').value = String(Math.min(200, clamped));
+        updateRangeUI($('min_area'));
+      }
+      markDirty();
+    });
+    $('minAreaNum').addEventListener('change', function () {
+      var raw = parseFloat($('minAreaNum').value);
+      $('minAreaNum').value = String(isFinite(raw) ? Math.max(0, Math.min(100000, Math.round(raw))) : 24);
+    });
+
+    /* 颜色：色盘与十六进制输入双向同步 */
+    [['stroke', 'strokeHex'], ['bg', 'bgHex']].forEach(function (pair) {
+      var color = $(pair[0]), hex = $(pair[1]);
+      color.addEventListener('input', function () { hex.value = color.value; markDirty(); });
+      hex.addEventListener('change', function () {
+        var v = hex.value.trim().toLowerCase();
+        if (/^#[0-9a-f]{3}$/.test(v)) {
+          v = '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+        }
+        if (/^#[0-9a-f]{6}$/.test(v)) {
+          color.value = v;
+          hex.value = v;
+          markDirty();
+        } else {
+          hex.value = color.value;
+          toast('请输入有效的十六进制颜色，如 #1a1a1a', 'error');
+        }
+      });
+    });
+
+    /* 开关 */
+    ['transparent', 'invert', 'crop'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        if (id === 'transparent') updateBgDisabled();
+        markDirty();
+      });
+    });
+
+    /* 动作 */
+    $('generateBtn').addEventListener('click', generate);
+    $('resetBtn').addEventListener('click', function () {
+      applyPreset(state.preset, true);
+      toast('参数已恢复为「' + PRESETS[state.preset].label + '」方案默认值', 'info');
+    });
+    $('downloadSvg').addEventListener('click', downloadSvg);
+    $('downloadPng').addEventListener('click', downloadPng);
+    $('healthBtn').addEventListener('click', checkHealth);
+
+    /* 预览模式 */
+    document.querySelectorAll('#viewGroup button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.view = btn.getAttribute('data-view');
+        document.querySelectorAll('#viewGroup button').forEach(function (b) {
+          var active = b === btn;
+          b.classList.toggle('is-active', active);
+          b.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        renderStage();
+      });
+    });
+
+    /* 分割线：指针拖动 + 键盘 */
+    var canvas = $('splitCanvas');
+    canvas.addEventListener('pointerdown', function (e) {
+      state.dragging = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 忽略旧内核 */ }
+      splitFromClientX(e.clientX);
+      e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (state.dragging) splitFromClientX(e.clientX);
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (type) {
+      canvas.addEventListener(type, function () { state.dragging = false; });
+    });
+    $('divider').addEventListener('keydown', function (e) {
+      var step = e.shiftKey ? 10 : 2;
+      var next = state.split;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next -= step;
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next += step;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = 100;
+      else return;
+      e.preventDefault();
+      setSplit(next);
+    });
+  }
+
+  /* ----------------------------------------------------------------------
+     初始化
+     ---------------------------------------------------------------------- */
+  applyPreset('auto', false);
+  bindEvents();
+  renderStage();
+  refreshHints();
+  checkHealth();
+})();
+</script>
+</body>
+</html>

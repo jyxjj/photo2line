@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SVG 编辑器 · Vector Studio</title>
+<!-- 启动错误浮层：任何脚本错误都会红字显示，避免静默白屏 -->
+<script>
+  (function () {
+    function show(msg) {
+      var el = document.getElementById('bootError');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'bootError';
+        el.setAttribute('style', 'position:fixed;left:0;top:0;right:0;z-index:2147483647;background:#b00020;color:#fff;font:13px/1.6 Consolas,Menlo,monospace;padding:14px 18px;white-space:pre-wrap;max-height:70vh;overflow:auto;box-shadow:0 4px 20px rgba(0,0,0,.4)');
+        (document.body || document.documentElement).appendChild(el);
+      }
+      el.textContent += msg + '\n';
+    }
+    window.addEventListener('error', function (e) {
+      show('运行错误: ' + (e.message || (e.error && e.error.message) || e.error) +
+        (e.filename ? ('\n@ ' + e.filename + ':' + e.lineno + ':' + e.colno) : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason; show('未处理的异常: ' + (r && r.message ? r.message : r));
+    });
+  })();
+</script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ 图标精灵 ============ -->
+<svg class="icon-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3l14 9-6.5 1.2L9.5 20z"/></symbol>
+    <symbol id="i-pan" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3L9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="1.5"/></symbol>
+    <symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="7"/></symbol>
+    <symbol id="i-line" viewBox="0 0 24 24"><path d="M4 20L20 4"/><circle cx="4" cy="20" r="1.3"/><circle cx="20" cy="4" r="1.3"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 20L19 5M12.5 5H19v6.5"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 3l4 4-9 9-5 1 1-5z"/><path d="M10.5 4.5l4 4"/><circle cx="6" cy="18" r="1.2"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M3 18c2.5 0 2.5-6 5-6s2.5 6 5 6 2.5-6 5-6 2 3 3 3"/><path d="M3 21h18"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 5h16M12 5v14M8.5 19h7"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M4 17l5-5 3.5 3.5 3-3 5 5"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 6L4 10l4 4"/><path d="M4 10h10a5.5 5.5 0 010 11"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16 6l4 4-4 4"/><path d="M20 10H10a5.5 5.5 0 000 11"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0014.5 4H5.5A1.5 1.5 0 004 5.5v9A1.5 1.5 0 005.5 16H8"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-group" viewBox="0 0 24 24"><rect x="3" y="3" width="12" height="12" rx="1" stroke-dasharray="2 2"/><rect x="9" y="9" width="12" height="12" rx="1"/></symbol>
+    <symbol id="i-ungroup" viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="9" height="9" rx="1"/><rect x="12.5" y="12.5" width="9" height="9" rx="1"/><path d="M12 8h4M8 12v4"/></symbol>
+    <symbol id="i-front" viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="1"/><path d="M8 17h11a2 2 0 002-2V7"/><path d="M3 8v11a2 2 0 002 2h11"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><rect x="10" y="10" width="11" height="11" rx="1"/><path d="M16 7H5a2 2 0 00-2 2v8"/><path d="M21 16V5a2 2 0 00-2-2H8"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+    <symbol id="i-fliph" viewBox="0 0 24 24"><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L4 12l5 5zM15 7l5 5-5 5z"/></symbol>
+    <symbol id="i-flipv" viewBox="0 0 24 24"><path d="M3 12h18" stroke-dasharray="2 2"/><path d="M7 9l5-5 5 5zM7 15l5 5 5-5z"/></symbol>
+    <symbol id="i-aleft" viewBox="0 0 24 24"><path d="M3 3v18" stroke-width="2"/><rect x="6" y="6" width="12" height="4"/><rect x="6" y="14" width="8" height="4"/></symbol>
+    <symbol id="i-ahcenter" viewBox="0 0 24 24"><path d="M12 3v18" stroke-width="2"/><rect x="4" y="6" width="16" height="4"/><rect x="7" y="14" width="10" height="4"/></symbol>
+    <symbol id="i-aright" viewBox="0 0 24 24"><path d="M21 3v18" stroke-width="2"/><rect x="6" y="6" width="12" height="4"/><rect x="10" y="14" width="8" height="4"/></symbol>
+    <symbol id="i-atop" viewBox="0 0 24 24"><path d="M3 3h18" stroke-width="2"/><rect x="6" y="6" width="4" height="12"/><rect x="14" y="6" width="4" height="8"/></symbol>
+    <symbol id="i-avcenter" viewBox="0 0 24 24"><path d="M3 12h18" stroke-width="2"/><rect x="6" y="4" width="4" height="16"/><rect x="14" y="7" width="4" height="10"/></symbol>
+    <symbol id="i-abottom" viewBox="0 0 24 24"><path d="M3 21h18" stroke-width="2"/><rect x="6" y="6" width="4" height="12"/><rect x="14" y="10" width="4" height="8"/></symbol>
+    <symbol id="i-dist-h" viewBox="0 0 24 24"><path d="M3 4v16M21 4v16"/><rect x="8" y="7" width="8" height="10"/></symbol>
+    <symbol id="i-dist-v" viewBox="0 0 24 24"><path d="M4 3h16M4 21h16"/><rect x="7" y="8" width="10" height="8"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 6.2A11 11 0 0112 6c6.5 0 10 6 10 6a17 17 0 01-3.2 3.6M6.5 7.7C3.6 9.4 2 12 2 12s3.5 6 10 6a10.8 10.8 0 004.2-.8"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 017-2.6"/></symbol>
+    <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/></symbol>
+    <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M7.5 10.5h6"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><rect x="8" y="8" width="8" height="8"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 4l-3 16"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 11l5 5 5-5M4 19h16"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4zM8 4v6h8V4M8 20v-6h8v6"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3zM3 6v12"/></symbol>
+    <symbol id="i-new" viewBox="0 0 24 24"><path d="M13 3H6a1 1 0 00-1 1v16a1 1 0 001 1h12a1 1 0 001-1V9zM13 3v6h6M9 14h6M12 11v6"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 115 0c0 2-2.5 2.2-2.5 4M12 17h.01"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></symbol>
+    <symbol id="i-center" viewBox="0 0 24 24"><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="3"/></symbol>
+  </defs>
+</svg>
+
+<!-- ============ 顶栏 ============ -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark"><svg viewBox="0 0 32 32"><rect x="4" y="4" width="11" height="11" rx="2"/><circle cx="22.5" cy="9.5" r="5.5"/><path d="M4 28l9-11 6 7 4-4 5 8z"/></svg></div>
+    <div class="brand-text"><strong>SVG 编辑器</strong><span>VECTOR STUDIO</span></div>
+  </div>
+
+  <div class="top-divider"></div>
+  <div class="top-group">
+    <input id="docName" class="doc-name" type="text" value="未命名作品" spellcheck="false" title="文件名">
+    <button class="icon-btn" id="btnNew" title="新建空白画布 (Ctrl+N)"><svg class="icon"><use href="#i-new"/></svg></button>
+    <button class="icon-btn" id="btnOpen" title="打开 SVG 文件 (Ctrl+O)"><svg class="icon"><use href="#i-open"/></svg></button>
+    <button class="icon-btn" id="btnSave" title="保存 / 下载 SVG (Ctrl+S)"><svg class="icon"><use href="#i-save"/></svg></button>
+  </div>
+
+  <div class="top-divider"></div>
+  <div class="top-group">
+    <button class="icon-btn" data-action="undo" title="撤销 (Ctrl+Z)"><svg class="icon"><use href="#i-undo"/></svg></button>
+    <button class="icon-btn" data-action="redo" title="重做 (Ctrl+Shift+Z)"><svg class="icon"><use href="#i-redo"/></svg></button>
+    <button class="icon-btn" data-action="duplicate" title="再制 (Ctrl+D)"><svg class="icon"><use href="#i-copy"/></svg></button>
+    <button class="icon-btn" data-action="delete" title="删除 (Delete)"><svg class="icon"><use href="#i-trash"/></svg></button>
+  </div>
+
+  <div class="top-divider"></div>
+  <div class="top-group">
+    <button class="icon-btn" data-action="group" title="组合 (Ctrl+G)"><svg class="icon"><use href="#i-group"/></svg></button>
+    <button class="icon-btn" data-action="ungroup" title="取消组合 (Ctrl+Shift+G)"><svg class="icon"><use href="#i-ungroup"/></svg></button>
+    <button class="icon-btn" data-action="front" title="置于顶层"><svg class="icon"><use href="#i-front"/></svg></button>
+    <button class="icon-btn" data-action="back" title="置于底层"><svg class="icon"><use href="#i-back"/></svg></button>
+  </div>
+
+  <div class="top-spacer"></div>
+  <div class="top-group">
+    <button class="text-btn" id="btnHelp" title="快捷键与使用说明"><svg class="icon"><use href="#i-help"/></svg><span>帮助</span></button>
+    <button class="text-btn" id="btnCode" title="查看 / 编辑 SVG 源码"><svg class="icon"><use href="#i-code"/></svg><span>代码</span></button>
+    <button class="text-btn" id="btnExportPng" title="导出 PNG 图片"><svg class="icon"><use href="#i-image"/></svg><span>PNG</span></button>
+    <button class="primary-btn" id="btnExportSvg"><svg class="icon"><use href="#i-download"/></svg><span>导出 SVG</span></button>
+  </div>
+</header>
+
+<!-- ============ 主体 ============ -->
+<main class="workspace">
+  <!-- 左侧工具栏 -->
+  <aside class="toolbar" id="toolbar">
+    <button class="tool-btn active" data-tool="select" title="选择 / 变换 (V)"><svg class="icon"><use href="#i-select"/></svg></button>
+    <button class="tool-btn" data-tool="pan" title="平移画布 (H 或按住空格)"><svg class="icon"><use href="#i-pan"/></svg></button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="rect" title="矩形 (R)　Shift 正方形 / Alt 从中心"><svg class="icon"><use href="#i-rect"/></svg></button>
+    <button class="tool-btn" data-tool="ellipse" title="椭圆 (E)　Shift 正圆 / Alt 从中心"><svg class="icon"><use href="#i-ellipse"/></svg></button>
+    <button class="tool-btn" data-tool="line" title="直线 (L)　Shift 吸附 15°"><svg class="icon"><use href="#i-line"/></svg></button>
+    <button class="tool-btn" data-tool="arrow" title="箭头 (A)"><svg class="icon"><use href="#i-arrow"/></svg></button>
+    <button class="tool-btn" data-tool="pen" title="折线 / 多边形 (P)　双击或回车结束"><svg class="icon"><use href="#i-pen"/></svg></button>
+    <button class="tool-btn" data-tool="pencil" title="自由画笔 (B)"><svg class="icon"><use href="#i-pencil"/></svg></button>
+    <button class="tool-btn" data-tool="text" title="文本 (T)　双击文本可再编辑"><svg class="icon"><use href="#i-text"/></svg></button>
+    <button class="tool-btn" data-tool="image" title="插入图片 (I)"><svg class="icon"><use href="#i-image"/></svg></button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-action="zoomIn" title="放大 (+)"><svg class="icon"><use href="#i-zoom-in"/></svg></button>
+    <button class="tool-btn" data-action="zoomOut" title="缩小 (-)"><svg class="icon"><use href="#i-zoom-out"/></svg></button>
+    <button class="tool-btn" data-action="fit" title="适应画布 (0)"><svg class="icon"><use href="#i-fit"/></svg></button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-action="toggleGrid" title="显示 / 隐藏网格"><svg class="icon"><use href="#i-grid"/></svg></button>
+  </aside>
+
+  <!-- 画布 -->
+  <section class="canvas-area" id="canvasArea">
+    <div class="canvas-head">
+      <span class="canvas-title">画布</span>
+      <span id="sizeLabel" class="canvas-meta">1200 × 800</span>
+      <span class="canvas-sep"></span>
+      <label class="mini-check"><input type="checkbox" id="chkGrid" checked> 网格</label>
+      <label class="mini-check"><input type="checkbox" id="chkSnap" checked> 吸附</label>
+    </div>
+    <div class="canvas-stage" id="canvasStage">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
+        <defs id="canvasDefs">
+          <pattern id="gridSmall" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M20 0H0V20" fill="none" stroke="var(--grid-line)" stroke-width="0.6"/>
+          </pattern>
+          <pattern id="gridBig" width="100" height="100" patternUnits="userSpaceOnUse">
+            <rect width="100" height="100" fill="url(#gridSmall)"/>
+            <path d="M100 0H0V100" fill="none" stroke="var(--grid-strong)" stroke-width="1"/>
+          </pattern>
+          <marker id="arrowHead" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0L10 5L0 10z" fill="context-stroke"/>
+          </marker>
+          <marker id="arrowStart" viewBox="0 0 10 10" refX="1.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M10 0L0 5L10 10z" fill="context-stroke"/>
+          </marker>
+        </defs>
+        <rect id="pageShadow" x="0" y="0" width="1200" height="800" data-editor-only="1"/>
+        <rect id="pageBg" x="0" y="0" width="1200" height="800" data-editor-only="1"/>
+        <rect id="gridOverlay" x="0" y="0" width="1200" height="800" fill="url(#gridBig)" data-editor-only="1" pointer-events="none"/>
+        <g id="scene"></g>
+        <g id="overlay" pointer-events="none"></g>
+      </svg>
+      <div class="floating-zoom">
+        <button data-action="zoomOut" title="缩小"><svg class="icon"><use href="#i-zoom-out"/></svg></button>
+        <button id="zoomLabel" title="点击恢复 100%">100%</button>
+        <button data-action="zoomIn" title="放大"><svg class="icon"><use href="#i-zoom-in"/></svg></button>
+        <button data-action="fit" title="适应画布"><svg class="icon"><use href="#i-fit"/></svg></button>
+      </div>
+      <div class="canvas-tip" id="canvasTip"></div>
+    </div>
+  </section>
+
+  <!-- 右侧属性面板 -->
+  <aside class="inspector">
+    <div class="inspector-scroll">
+
+      <section class="panel" data-panel="selection">
+        <div class="panel-head"><h2>变换</h2><span class="sel-count" id="selCount">未选中</span></div>
+        <div class="panel-body">
+          <div class="field-grid">
+            <label class="field"><span>X</span><input type="number" data-prop="x" step="1"></label>
+            <label class="field"><span>Y</span><input type="number" data-prop="y" step="1"></label>
+            <label class="field"><span>宽</span><input type="number" data-prop="w" step="1" min="0.1"></label>
+            <label class="field"><span>高</span><input type="number" data-prop="h" step="1" min="0.1"></label>
+          </div>
+          <div class="field-grid">
+            <label class="field"><span>旋转°</span><input type="number" data-prop="rotation" step="1"></label>
+            <label class="field"><span>不透明度</span><input type="number" data-prop="opacity" step="0.05" min="0" max="1"></label>
+          </div>
+          <label class="row-check"><input type="checkbox" id="chkLockRatio"> 锁定宽高比</label>
+          <div class="btn-row">
+            <button class="mini-btn" data-action="flipH"><svg class="icon"><use href="#i-fliph"/></svg>水平翻转</button>
+            <button class="mini-btn" data-action="flipV"><svg class="icon"><use href="#i-flipv"/></svg>垂直翻转</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="appearance">
+        <div class="panel-head"><h2>外观</h2></div>
+        <div class="panel-body">
+          <div class="color-row">
+            <span class="color-label">填充</span>
+            <input type="color" data-prop="fillColor" value="#4f8cff" title="填充颜色">
+            <input type="text" class="hex-input" data-prop="fill" value="#4f8cff" spellcheck="false" title="支持 none / #RRGGBB / 颜色名">
+            <button class="tiny-btn" data-action="noFill" title="无填充">∅</button>
+          </div>
+          <div class="color-row">
+            <span class="color-label">描边</span>
+            <input type="color" data-prop="strokeColor" value="#1d2433" title="描边颜色">
+            <input type="text" class="hex-input" data-prop="stroke" value="#1d2433" spellcheck="false" title="支持 none / #RRGGBB / 颜色名">
+            <button class="tiny-btn" data-action="noStroke" title="无描边">∅</button>
+          </div>
+          <div class="field-grid">
+            <label class="field"><span>线宽</span><input type="number" data-prop="strokeWidth" step="0.5" min="0"></label>
+            <label class="field"><span>圆角</span><input type="number" data-prop="rx" step="1" min="0" title="仅对矩形有效"></label>
+          </div>
+          <div class="field-grid">
+            <label class="field"><span>端点</span><select data-prop="linecap"><option value="butt">平头</option><option value="round">圆头</option><option value="square">方头</option></select></label>
+            <label class="field"><span>箭头</span><select data-prop="arrow"><option value="none">无</option><option value="end">终点</option><option value="start">起点</option><option value="both">两端</option></select></label>
+          </div>
+          <div class="swatches" id="swatches"></div>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="text">
+        <div class="panel-head"><h2>文本</h2><span class="panel-note">双击画布中的文本可编辑</span></div>
+        <div class="panel-body">
+          <label class="field wide"><span>字体</span><select data-prop="fontFamily">
+            <option value="sans-serif">无衬线</option><option value="serif">衬线</option>
+            <option value="monospace">等宽</option><option value="Microsoft YaHei, sans-serif">微软雅黑</option>
+            <option value="Arial, sans-serif">Arial</option><option value="Georgia, serif">Georgia</option>
+          </select></label>
+          <div class="field-grid">
+            <label class="field"><span>字号</span><input type="number" data-prop="fontSize" min="1" step="1"></label>
+            <label class="field"><span>字重</span><select data-prop="fontWeight"><option value="400">常规</option><option value="600">半粗</option><option value="700">加粗</option><option value="300">细体</option></select></label>
+          </div>
+          <div class="field-grid">
+            <label class="field"><span>对齐</span><select data-prop="textAnchor"><option value="start">左</option><option value="middle">居中</option><option value="end">右</option></select></label>
+            <label class="field"><span>样式</span><select data-prop="fontStyle"><option value="normal">正常</option><option value="italic">斜体</option></select></label>
+          </div>
+          <button class="mini-btn wide" data-action="editText">编辑文本内容</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>对齐与分布</h2><span class="panel-note" id="alignNote">选中 2 个以上对象</span></div>
+        <div class="panel-body">
+          <div class="align-grid">
+            <button class="icon-btn" data-align="left" title="左对齐"><svg class="icon"><use href="#i-aleft"/></svg></button>
+            <button class="icon-btn" data-align="hcenter" title="水平居中"><svg class="icon"><use href="#i-ahcenter"/></svg></button>
+            <button class="icon-btn" data-align="right" title="右对齐"><svg class="icon"><use href="#i-aright"/></svg></button>
+            <button class="icon-btn" data-align="top" title="顶对齐"><svg class="icon"><use href="#i-atop"/></svg></button>
+            <button class="icon-btn" data-align="vcenter" title="垂直居中"><svg class="icon"><use href="#i-avcenter"/></svg></button>
+            <button class="icon-btn" data-align="bottom" title="底对齐"><svg class="icon"><use href="#i-abottom"/></svg></button>
+            <button class="icon-btn" data-align="centerPage" title="相对画布居中"><svg class="icon"><use href="#i-center"/></svg></button>
+            <button class="icon-btn" data-align="distH" title="水平等距分布"><svg class="icon"><use href="#i-dist-h"/></svg></button>
+            <button class="icon-btn" data-align="distV" title="垂直等距分布"><svg class="icon"><use href="#i-dist-v"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel layers-panel">
+        <div class="panel-head"><h2>图层</h2><span class="panel-note" id="layerCount">0 个对象</span></div>
+        <div class="layer-list" id="layerList"></div>
+        <div class="layer-actions">
+          <button class="icon-btn" data-action="up" title="上移一层"><svg class="icon"><use href="#i-up"/></svg></button>
+          <button class="icon-btn" data-action="down" title="下移一层"><svg class="icon"><use href="#i-down"/></svg></button>
+          <button class="icon-btn" data-action="front" title="置于顶层"><svg class="icon"><use href="#i-front"/></svg></button>
+          <button class="icon-btn" data-action="back" title="置于底层"><svg class="icon"><use href="#i-back"/></svg></button>
+          <button class="icon-btn" data-action="duplicate" title="再制"><svg class="icon"><use href="#i-copy"/></svg></button>
+          <button class="icon-btn" data-action="delete" title="删除"><svg class="icon"><use href="#i-trash"/></svg></button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>画布设置</h2></div>
+        <div class="panel-body">
+          <div class="field-grid">
+            <label class="field"><span>宽度</span><input type="number" data-prop="pageW" min="1" step="10"></label>
+            <label class="field"><span>高度</span><input type="number" data-prop="pageH" min="1" step="10"></label>
+          </div>
+          <div class="color-row">
+            <span class="color-label">背景</span>
+            <input type="color" data-prop="bgColor" value="#ffffff">
+            <input type="text" class="hex-input" data-prop="background" value="#ffffff" spellcheck="false">
+            <label class="mini-inline"><input type="checkbox" data-prop="transparent"> 透明</label>
+          </div>
+          <div class="btn-row">
+            <button class="mini-btn" data-action="fit">适应画布</button>
+            <button class="mini-btn" data-action="centerPageAll">内容居中</button>
+            <button class="mini-btn" data-action="clear">清空画布</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>文件</h2></div>
+        <div class="panel-body file-actions">
+          <button class="mini-btn" data-action="copyCode">复制 SVG 代码</button>
+          <button class="mini-btn" data-action="exportPng">导出 PNG（2×）</button>
+          <button class="mini-btn" data-action="exportSvg">下载 SVG</button>
+          <button class="mini-btn" data-action="loadDemo">载入示例</button>
+        </div>
+      </section>
+
+    </div>
+  </aside>
+</main>
+
+<!-- ============ 状态栏 ============ -->
+<footer class="statusbar">
+  <span class="status-item" id="statusTool">工具：选择</span>
+  <span class="status-item" id="statusPos">X 0 · Y 0</span>
+  <span class="status-item" id="statusSel">未选中对象</span>
+  <span class="status-spacer"></span>
+  <span class="status-hint" id="statusHint">提示：按住空格拖动画布 · 滚轮缩放 · Shift 约束比例</span>
+  <span class="status-item" id="statusZoom">100%</span>
+</footer>
+
+<!-- ============ 弹窗：SVG 代码 ============ -->
+<div class="modal-backdrop" id="codeModal" hidden>
+  <div class="modal code-modal">
+    <div class="modal-head">
+      <div><h2>SVG 源码</h2><p>可直接编辑代码，点击「应用」更新画布</p></div>
+      <button class="icon-btn" data-action="closeCode" title="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <textarea id="codeText" spellcheck="false" wrap="off"></textarea>
+    <div class="modal-foot">
+      <span class="modal-msg" id="codeMsg"></span>
+      <button class="ghost-btn" data-action="copyCode">复制代码</button>
+      <button class="ghost-btn" data-action="downloadFromCode">下载</button>
+      <button class="primary-btn" data-action="applyCode"><svg class="icon"><use href="#i-check"/></svg>应用到画布</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 弹窗：帮助 ============ -->
+<div class="modal-backdrop" id="helpModal" hidden>
+  <div class="modal help-modal">
+    <div class="modal-head">
+      <div><h2>使用说明</h2><p>零依赖 · 所有数据仅保存在你的浏览器本地</p></div>
+      <button class="icon-btn" data-action="closeHelp" title="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="help-body">
+      <div class="help-col">
+        <h3>工具</h3>
+        <div class="kbd-row"><kbd>V</kbd> 选择 / 变换</div>
+        <div class="kbd-row"><kbd>H</kbd> / <kbd>空格</kbd> 平移画布</div>
+        <div class="kbd-row"><kbd>R</kbd> 矩形　<kbd>E</kbd> 椭圆　<kbd>L</kbd> 直线</div>
+        <div class="kbd-row"><kbd>A</kbd> 箭头　<kbd>P</kbd> 折线　<kbd>B</kbd> 画笔</div>
+        <div class="kbd-row"><kbd>T</kbd> 文本　<kbd>I</kbd> 插入图片</div>
+        <div class="kbd-row"><kbd>滚轮</kbd> 缩放　<kbd>0</kbd> 适应画布</div>
+        <h3>操作技巧</h3>
+        <div class="kbd-row"><kbd>Shift</kbd> + 点击 = 多选 / 加选</div>
+        <div class="kbd-row"><kbd>Shift</kbd> + 绘制 = 正方形 / 正圆 / 角度吸附</div>
+        <div class="kbd-row"><kbd>Alt</kbd> + 绘制 = 从中心开始</div>
+        <div class="kbd-row"><kbd>Shift</kbd> + 缩放 = 等比例；旋转时吸附 15°</div>
+        <div class="kbd-row">框选空白区域可批量选择；双击文本可编辑</div>
+      </div>
+      <div class="help-col">
+        <h3>编辑</h3>
+        <div class="kbd-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> 重做</div>
+        <div class="kbd-row"><kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> 复制 / 剪切 / 粘贴</div>
+        <div class="kbd-row"><kbd>Ctrl</kbd>+<kbd>D</kbd> 再制　<kbd>Delete</kbd> 删除</div>
+        <div class="kbd-row"><kbd>Ctrl</kbd>+<kbd>A</kbd> 全选　<kbd>Esc</kbd> 取消选择</div>
+        <div class="kbd-row"><kbd>Ctrl</kbd>+<kbd>G</kbd> 组合 / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> 取消组合</div>
+        <div class="kbd-row"><kbd>方向键</kbd> 微移 1px（<kbd>Shift</kbd> ×10）</div>
+        <div class="kbd-row"><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存 · <kbd>Ctrl</kbd>+<kbd>O</kbd> 打开</div>
+        <h3>文件</h3>
+        <p>可打开任意 SVG 文件、拖放 SVG / 图片到画布；支持导出 SVG、PNG 与直接编辑源码。编辑内容会自动暂存到浏览器，刷新后自动恢复。</p>
+        <p class="help-warn">说明：PNG 导出为 2 倍分辨率。若 SVG 内引用了跨域图片，浏览器可能拒绝导出 PNG，此时请改用 SVG 导出。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 文本编辑器浮层 -->
+<div id="textEditLayer" class="text-edit-layer" hidden>
+  <textarea id="textEditInput" spellcheck="false"></textarea>
+  <div class="text-edit-tip">Ctrl+Enter 或点击空白处保存 · Esc 取消</div>
+</div>
+
+<!-- 提示消息 -->
+<div class="toast-stack" id="toastStack"></div>
+
+<input type="file" id="fileOpen" accept=".svg,image/svg+xml,text/xml" hidden>
+<input type="file" id="fileImage" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
+
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
